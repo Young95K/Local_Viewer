@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Three.js Solar System</title>
+    <script type="text/javascript" src="js/util.js"></script>
+
+
+  </head>
+
+  <body>
+    <!-- import libraries -->
+    <script type="importmap">
+      {
+          "imports": {
+              "three": "./lib/three.module.js",
+              "three/addons/": "./lib/jsm/"
+          }
+      }
+    </script>
+
+    <!-- referred https://github.dev/mrdoob/three.js/blob/master/examples/webgl_geometry_teapot.html -->
+    <script type="module">
+
+      import * as THREE from 'three';
+
+      import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
+      import { GrannyKnot } from 'three/addons/curves/CurveExtras.js';
+
+      let camera, scene, renderer, mesh, mesh2, tube, camera_path;
+      let cameraControls;
+      let effectController;
+      const teapotSize = 10;
+      let ambientLight, light;
+
+      let tess = - 1;	// force initialization
+      let bBottom;
+      let bLid;
+      let bBody;
+      let bFitLid;
+      let bNonBlinn;
+      let shading;
+      let cStyle;
+
+      let teapot, textureCube, curve, curveObject;
+      let   clock = new THREE.Clock();
+      let position = new THREE.Vector3();
+      let dataArray = [];
+      let loadedDataArray = [];
+      let camera_coordinates = []
+      const scale = 25;
+      const materials = {};
+
+      init();
+      // render();
+      animate();
+
+      function init() {
+
+        const container = document.createElement( 'div' );
+        document.body.appendChild( container );
+
+        const canvasWidth = window.innerWidth;
+        const canvasHeight = window.innerHeight;
+
+        // CAMERA
+        camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 80000 );
+        camera.position.set( - 600, 550, 1300 );
+
+        // LIGHTS
+        ambientLight = new THREE.AmbientLight( 0x7c7c7c, 3.0 );
+
+        light = new THREE.DirectionalLight( 0xFFFFFF, 3.0 );
+        light.position.set( 0.32, 0.39, 0.7 );
+
+        // RENDERER
+        renderer = new THREE.WebGLRenderer( { antialias: true } );
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.setSize( canvasWidth, canvasHeight );
+        container.appendChild( renderer.domElement );
+
+        // EVENTS
+        window.addEventListener( 'resize', onWindowResize );
+
+        // CONTROLS
+        cameraControls = new OrbitControls( camera, renderer.domElement );
+        cameraControls.minDistance = 250;
+			  cameraControls.maxDistance = 1750;
+        //cameraControls.maxPolarAngle = 0.5 * Math.PI;
+        cameraControls.maxPolarAngle = 0.25 * Math.PI;
+        cameraControls.addEventListener( 'change', render );
+
+        // TEXTURE MAP
+        const textureMap = new THREE.TextureLoader().load( 'textures/uv_grid_opengl.jpg' );
+        textureMap.wrapS = textureMap.wrapT = THREE.RepeatWrapping;
+        textureMap.anisotropy = 16;
+        textureMap.colorSpace = THREE.SRGBColorSpace;
+
+        // REFLECTION MAP
+        const path = 'textures/cube/pisa/';
+        const urls = [ 'px.png', 'nx.png', 'py.png', 'ny.png', 'pz.png', 'nz.png' ];
+
+        textureCube = new THREE.CubeTextureLoader().setPath( path ).load( urls );
+
+        materials[ 'wireframe' ] = new THREE.MeshBasicMaterial( { wireframe: true } );
+        materials[ 'flat' ] = new THREE.MeshPhongMaterial( { specular: 0x000000, flatShading: true, side: THREE.DoubleSide } );
+        materials[ 'smooth' ] = new THREE.MeshLambertMaterial( { side: THREE.DoubleSide } );
+        materials[ 'glossy' ] = new THREE.MeshPhongMaterial( { side: THREE.DoubleSide } );
+        materials[ 'textured' ] = new THREE.MeshPhongMaterial( { map: textureMap, side: THREE.DoubleSide } );
+        materials[ 'reflective' ] = new THREE.MeshPhongMaterial( { envMap: textureCube, side: THREE.DoubleSide } );
+
+        // scene itself
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color( 0xAAAAAA );
+
+
+        // Sun
+        mesh = new THREE.Mesh(
+					new THREE.SphereGeometry( 100, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0xffffff, wireframe: true } )
+				);
+				scene.add( mesh );
+
+        mesh2 = new THREE.Mesh(
+					new THREE.SphereGeometry( 50, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0x00ff00, wireframe: true } )
+				);
+				mesh.add( mesh2 );
+        
+        
+        const mesh3 = new THREE.Mesh(
+					new THREE.SphereGeometry( 10, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0x0000ff, wireframe: true } )
+				);
+				mesh2.add( mesh3 );
+
+        const  curve = new GrannyKnot();
+        const geometry = new THREE.TubeGeometry( curve, 64, 1, 8, true );
+        const  material = new  THREE.MeshBasicMaterial({
+            color:0xff0000,
+            wireframe: true,
+            side:THREE.DoubleSide,
+        })
+        tube = new THREE.Mesh( geometry, material ); 
+        tube.scale.set( scale, scale, scale );
+        //downloadTube();
+
+        // Load points
+        importAndLoadJSON();
+        console.log("camera coordinates are:" + camera_coordinates);
+
+        
+
+
+
+
+        //scene.add( tube );
+        scene.add( ambientLight );
+        scene.add( light );
+
+        // GUI
+        setupGui();
+
+      }
+
+      // EVENT HANDLERS
+
+      function downloadTube(mesh){
+        var json = tube.toJSON();
+        var jsonString = JSON.stringify(json);
+        var blob = new Blob([jsonString], { type: "application/json" });
+        var link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "mesh.json";
+        document.body.appendChild(link);
+        link.click();
+        // Clean up
+        document.body.removeChild(link);
+      }
+
+      function exportDataToJSON() {
+        // Convert the dataArray to a JSON string
+        var jsonString = JSON.stringify(dataArray);
+      
+        // Create a Blob from the JSON string
+        var blob = new Blob([jsonString], { type: "application/json" });
+      
+        // Create a link element
+        var link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "t_and_pos_data.json";
+      
+        // Append the link to the document body and trigger the download
+        document.body.appendChild(link);
+        link.click();
+      
+        // Clean up
+        document.body.removeChild(link);
+      }
+
+      function importAndLoadJSON() {
+        console.log("importAndLoadJSON");
+        // Replace 'your_json_file.json' with the actual path to your JSON file
+        fetch('../../t_and_pos_data_2.json')
+          .then(response => response.json())
+          .then(data => {
+            // Use the parsed JSON data as a JavaScript object
+            loadedDataArray = data;
+            //console.log(loadedDataArray);
+            console.log(loadedDataArray.length);
+            for (var i = 0; i < loadedDataArray.length; i++){
+              var pos = loadedDataArray[i].pos;
+              var coord_vec = new THREE.Vector3(pos.x, pos.y, pos.z)
+              camera_coordinates.push(coord_vec)
+              console.log("Position " + i + ": ", pos.x, pos.y, pos.z);
+            }
+            // You can now work with the 'loadedDataArray' as needed
+          })
+          .catch(error => {
+            console.error('Error loading the JSON file:', error);
+          });
+      }
+
+      function onWindowResize() {
+
+        const canvasWidth = window.innerWidth;
+        const canvasHeight = window.innerHeight;
+
+        renderer.setSize( canvasWidth, canvasHeight );
+
+        camera.aspect = canvasWidth / canvasHeight;
+        camera.updateProjectionMatrix();
+
+        render();
+
+      }
+
+      function setupGui() {
+
+        effectController = {
+          newTess: 15,
+          bottom: true,
+          lid: true,
+          body: true,
+          fitLid: false,
+          nonblinn: false,
+          newShading: 'glossy',
+          curveStyle: 'spline'
+        };
+
+        const gui = new GUI();
+        gui.add( effectController, 'newTess', [ 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 40, 50 ] ).name( 'Tessellation Level' ).onChange( render );
+        gui.add( effectController, 'lid' ).name( 'display lid' ).onChange( render );
+        gui.add( effectController, 'body' ).name( 'display body' ).onChange( render );
+        gui.add( effectController, 'bottom' ).name( 'display bottom' ).onChange( render );
+        gui.add( effectController, 'fitLid' ).name( 'snug lid' ).onChange( render );
+        gui.add( effectController, 'nonblinn' ).name( 'original scale' ).onChange( render );
+        gui.add( effectController, 'newShading', [ 'wireframe', 'flat', 'smooth', 'glossy', 'textured', 'reflective' ] ).name( 'Shading' ).onChange( render );
+        gui.add( effectController, 'curveStyle', [ 'spline', 'QuadBezier', 'CubBezier' ] ).name( 'Curve Style' ).onChange( render );
+
+      }
+
+
+      //
+
+      function render() {
+
+        if ( effectController.newTess !== tess ||
+          effectController.bottom !== bBottom ||
+          effectController.lid !== bLid ||
+          effectController.body !== bBody ||
+          effectController.fitLid !== bFitLid ||
+          effectController.nonblinn !== bNonBlinn ||
+          effectController.newShading !== shading ||
+          effectController.curveStyle !== cStyle ) {
+
+          tess = effectController.newTess;
+          bBottom = effectController.bottom;
+          bLid = effectController.lid;
+          bBody = effectController.body;
+          bFitLid = effectController.fitLid;
+          bNonBlinn = effectController.nonblinn;
+          shading = effectController.newShading;
+          cStyle = effectController.curveStyle;
+
+          createNewTeapot();
+          drawCurve();
+
+        }
+
+        // skybox is rendered separately, so that it is always behind the teapot.
+        if ( shading === 'reflective' ) {
+
+          scene.background = textureCube;
+
+        } else {
+
+          scene.background = null;
+
+        }
+
+        // rotate mesh
+        const speed = 0.1
+        // the sun and the earth
+        mesh.rotation.y += 0.01 * speed;
+        mesh.children[0].rotation.y += 0.03
+				mesh.children[ 0 ].position.x = 650;
+        // the moon  
+				mesh2.children[ 0 ].position.x = 100;
+
+
+        renderer.render( scene, camera );
+
+      }
+
+      function updateCamera() {
+        const time = clock.getElapsedTime();
+        const  looptime = 20;
+        const t = (time % looptime)/ looptime;
+        const  t2 = ((time +0.1)% looptime) / looptime;
+        const  pos = tube.geometry.parameters.path.getPointAt(t, position);       
+        //console.log(time/looptime, t, pos) ;
+        const  pos2 =   tube.geometry.parameters.path.getPointAt(t2, position);
+        position.multiplyScalar( scale );
+        camera.position.copy(position);
+        camera.lookAt(0., 0.1, 0.);
+        /*
+        if (time/looptime < 1){
+          dataArray.push({
+            t: t,
+            pos: {
+              x: pos.x,
+              y: pos.y,
+              z: pos.z
+            }
+          });
+          console.log(time/looptime, t, pos);
+        } else {
+          console.log("done");
+          exportDataToJSON()  
+          Window.stop();
+        }  
+        */
+      }
+
+
+      function animate() {
+
+        requestAnimationFrame( animate );
+        //updateCamera();
+        render();
+
+      }
+
+      // Whenever the teapot changes, the scene is rebuilt from scratch (not much to it).
+      function createNewTeapot() {
+
+        if ( teapot !== undefined ) {
+          
+          teapot.geometry.dispose();
+          scene.remove( teapot );
+
+        }
+
+        const geometry = new TeapotGeometry( teapotSize,
+          tess,
+          effectController.bottom,
+          effectController.lid,
+          effectController.body,
+          effectController.fitLid,
+          ! effectController.nonblinn );
+
+        teapot = new THREE.Mesh( geometry, materials[ shading ] );
+
+        scene.add( teapot );
+
+      }
+      function drawCurve(){
+
+
+        if (cStyle === 'spline'){
+          console.log(camera_coordinates)
+          curve = new THREE.CatmullRomCurve3([
+            camera_coordinates[0],
+            camera_coordinates[1],
+            camera_coordinates[2]
+          ]);
+        } else if (cStyle === 'QuadBezier'){
+          console.log('QuadBezier')
+          curve = new THREE.QuadraticBezierCurve3(
+            camera_coordinates
+          );
+        } else if (cStyle === 'CubBezier'){
+          console.log('CubBezier')
+          curve = new THREE.CubicBezierCurve3(
+            camera_coordinates
+          );
+        }
+
+        const points = curve.getPoints( 50 );
+        const geometry = new THREE.BufferGeometry().setFromPoints( points );
+        const material = new THREE.LineBasicMaterial( { color: 0xff0000 } );
+        const curveObject = new THREE.Line( geometry, material );
+
+        scene.add(curveObject);
+      }
+
+    </script>
+  </body>
+
+</html>
