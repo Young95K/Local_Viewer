@@ -1,9 +1,10 @@
+/* eslint-disable linebreak-style */
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 
 let baseDirectory = '.';
-let port = 8080;
+let port = 5555;
 let host = '127.0.0.1';
 let lasttRequesTime = performance.now() / 1000;
 for(let i = 0; i < process.argv.length; ++i) {

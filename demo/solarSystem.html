@@ -31,8 +31,9 @@
 
       import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
+      import { GrannyKnot } from 'three/addons/curves/CurveExtras.js';
 
-      let camera, scene, renderer, mesh, mesh2;
+      let camera, scene, renderer, mesh, mesh2, tube, camera_path;
       let cameraControls;
       let effectController;
       const teapotSize = 10;
@@ -45,8 +46,15 @@
       let bFitLid;
       let bNonBlinn;
       let shading;
+      let cStyle;
 
-      let teapot, textureCube;
+      let teapot, textureCube, curve, curveObject;
+      let   clock = new THREE.Clock();
+      let position = new THREE.Vector3();
+      let dataArray = [];
+      let loadedDataArray = [];
+      let camera_coordinates = []
+      const scale = 25;
       const materials = {};
 
       init();
@@ -84,6 +92,8 @@
         cameraControls = new OrbitControls( camera, renderer.domElement );
         cameraControls.minDistance = 250;
 			  cameraControls.maxDistance = 1750;
+        //cameraControls.maxPolarAngle = 0.5 * Math.PI;
+        cameraControls.maxPolarAngle = 0.25 * Math.PI;
         cameraControls.addEventListener( 'change', render );
 
         // TEXTURE MAP
@@ -130,6 +140,27 @@
 				);
 				mesh2.add( mesh3 );
 
+        const  curve = new GrannyKnot();
+        const geometry = new THREE.TubeGeometry( curve, 64, 1, 8, true );
+        const  material = new  THREE.MeshBasicMaterial({
+            color:0xff0000,
+            wireframe: true,
+            side:THREE.DoubleSide,
+        })
+        tube = new THREE.Mesh( geometry, material ); 
+        tube.scale.set( scale, scale, scale );
+        //downloadTube();
+
+        // Load points
+        importAndLoadJSON();
+        console.log("camera coordinates are:" + camera_coordinates);
+
+        
+
+
+
+
+        //scene.add( tube );
         scene.add( ambientLight );
         scene.add( light );
 
@@ -139,6 +170,62 @@
       }
 
       // EVENT HANDLERS
+
+      function downloadTube(mesh){
+        var json = tube.toJSON();
+        var jsonString = JSON.stringify(json);
+        var blob = new Blob([jsonString], { type: "application/json" });
+        var link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "mesh.json";
+        document.body.appendChild(link);
+        link.click();
+        // Clean up
+        document.body.removeChild(link);
+      }
+
+      function exportDataToJSON() {
+        // Convert the dataArray to a JSON string
+        var jsonString = JSON.stringify(dataArray);
+      
+        // Create a Blob from the JSON string
+        var blob = new Blob([jsonString], { type: "application/json" });
+      
+        // Create a link element
+        var link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "t_and_pos_data.json";
+      
+        // Append the link to the document body and trigger the download
+        document.body.appendChild(link);
+        link.click();
+      
+        // Clean up
+        document.body.removeChild(link);
+      }
+
+      function importAndLoadJSON() {
+        console.log("importAndLoadJSON");
+        // Replace 'your_json_file.json' with the actual path to your JSON file
+        fetch('../../t_and_pos_data_2.json')
+          .then(response => response.json())
+          .then(data => {
+            // Use the parsed JSON data as a JavaScript object
+            loadedDataArray = data;
+            //console.log(loadedDataArray);
+            console.log(loadedDataArray.length);
+            for (var i = 0; i < loadedDataArray.length; i++){
+              var pos = loadedDataArray[i].pos;
+              var coord_vec = new THREE.Vector3(pos.x, pos.y, pos.z)
+              camera_coordinates.push(coord_vec)
+              console.log("Position " + i + ": ", pos.x, pos.y, pos.z);
+            }
+            // You can now work with the 'loadedDataArray' as needed
+          })
+          .catch(error => {
+            console.error('Error loading the JSON file:', error);
+          });
+      }
 
       function onWindowResize() {
 
@@ -163,7 +250,8 @@
           body: true,
           fitLid: false,
           nonblinn: false,
-          newShading: 'glossy'
+          newShading: 'glossy',
+          curveStyle: 'spline'
         };
 
         const gui = new GUI();
@@ -174,6 +262,7 @@
         gui.add( effectController, 'fitLid' ).name( 'snug lid' ).onChange( render );
         gui.add( effectController, 'nonblinn' ).name( 'original scale' ).onChange( render );
         gui.add( effectController, 'newShading', [ 'wireframe', 'flat', 'smooth', 'glossy', 'textured', 'reflective' ] ).name( 'Shading' ).onChange( render );
+        gui.add( effectController, 'curveStyle', [ 'spline', 'QuadBezier', 'CubBezier' ] ).name( 'Curve Style' ).onChange( render );
 
       }
 
@@ -188,7 +277,8 @@
           effectController.body !== bBody ||
           effectController.fitLid !== bFitLid ||
           effectController.nonblinn !== bNonBlinn ||
-          effectController.newShading !== shading ) {
+          effectController.newShading !== shading ||
+          effectController.curveStyle !== cStyle ) {
 
           tess = effectController.newTess;
           bBottom = effectController.bottom;
@@ -197,8 +287,10 @@
           bFitLid = effectController.fitLid;
           bNonBlinn = effectController.nonblinn;
           shading = effectController.newShading;
+          cStyle = effectController.curveStyle;
 
           createNewTeapot();
+          drawCurve();
 
         }
 
@@ -214,16 +306,12 @@
         }
 
         // rotate mesh
-        const r = Date.now() * 0.0005;
-        mesh.rotation.y += 0.01;
-				// mesh.position.z = 700 * Math.sin( r );
-				// mesh.position.y = 700 * Math.sin( r );
-
-        // mesh.children[ 0 ].position.x = 170 * Math.cos( 2 * r );
+        const speed = 0.1
+        // the sun and the earth
+        mesh.rotation.y += 0.01 * speed;
         mesh.children[0].rotation.y += 0.03
 				mesh.children[ 0 ].position.x = 650;
-        
-       
+        // the moon  
 				mesh2.children[ 0 ].position.x = 100;
 
 
@@ -231,12 +319,42 @@
 
       }
 
+      function updateCamera() {
+        const time = clock.getElapsedTime();
+        const  looptime = 20;
+        const t = (time % looptime)/ looptime;
+        const  t2 = ((time +0.1)% looptime) / looptime;
+        const  pos = tube.geometry.parameters.path.getPointAt(t, position);       
+        //console.log(time/looptime, t, pos) ;
+        const  pos2 =   tube.geometry.parameters.path.getPointAt(t2, position);
+        position.multiplyScalar( scale );
+        camera.position.copy(position);
+        camera.lookAt(0., 0.1, 0.);
+        /*
+        if (time/looptime < 1){
+          dataArray.push({
+            t: t,
+            pos: {
+              x: pos.x,
+              y: pos.y,
+              z: pos.z
+            }
+          });
+          console.log(time/looptime, t, pos);
+        } else {
+          console.log("done");
+          exportDataToJSON()  
+          Window.stop();
+        }  
+        */
+      }
+
+
       function animate() {
 
         requestAnimationFrame( animate );
-
+        //updateCamera();
         render();
-        stats.update();
 
       }
 
@@ -244,7 +362,7 @@
       function createNewTeapot() {
 
         if ( teapot !== undefined ) {
-
+          
           teapot.geometry.dispose();
           scene.remove( teapot );
 
@@ -262,6 +380,35 @@
 
         scene.add( teapot );
 
+      }
+      function drawCurve(){
+
+
+        if (cStyle === 'spline'){
+          console.log(camera_coordinates)
+          curve = new THREE.CatmullRomCurve3([
+            camera_coordinates[0],
+            camera_coordinates[1],
+            camera_coordinates[2]
+          ]);
+        } else if (cStyle === 'QuadBezier'){
+          console.log('QuadBezier')
+          curve = new THREE.QuadraticBezierCurve3(
+            camera_coordinates
+          );
+        } else if (cStyle === 'CubBezier'){
+          console.log('CubBezier')
+          curve = new THREE.CubicBezierCurve3(
+            camera_coordinates
+          );
+        }
+
+        const points = curve.getPoints( 50 );
+        const geometry = new THREE.BufferGeometry().setFromPoints( points );
+        const material = new THREE.LineBasicMaterial( { color: 0xff0000 } );
+        const curveObject = new THREE.Line( geometry, material );
+
+        scene.add(curveObject);
       }
 
     </script>
