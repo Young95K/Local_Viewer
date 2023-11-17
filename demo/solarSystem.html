@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Three.js Solar System</title>
+    <script type="text/javascript" src="js/util.js"></script>
+
+
+  </head>
+
+  <body>
+    <!-- import libraries -->
+    <script type="importmap">
+      {
+          "imports": {
+              "three": "./lib/three.module.js",
+              "three/addons/": "./lib/jsm/"
+          }
+      }
+    </script>
+
+    <!-- referred https://github.dev/mrdoob/three.js/blob/master/examples/webgl_geometry_teapot.html -->
+    <script type="module">
+
+      import * as THREE from 'three';
+
+      import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
+
+      let camera, scene, renderer, mesh, mesh2;
+      let cameraControls;
+      let effectController;
+      const teapotSize = 10;
+      let ambientLight, light;
+
+      let tess = - 1;	// force initialization
+      let bBottom;
+      let bLid;
+      let bBody;
+      let bFitLid;
+      let bNonBlinn;
+      let shading;
+
+      let teapot, textureCube;
+      const materials = {};
+
+      init();
+      // render();
+      animate();
+
+      function init() {
+
+        const container = document.createElement( 'div' );
+        document.body.appendChild( container );
+
+        const canvasWidth = window.innerWidth;
+        const canvasHeight = window.innerHeight;
+
+        // CAMERA
+        camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 80000 );
+        camera.position.set( - 600, 550, 1300 );
+
+        // LIGHTS
+        ambientLight = new THREE.AmbientLight( 0x7c7c7c, 3.0 );
+
+        light = new THREE.DirectionalLight( 0xFFFFFF, 3.0 );
+        light.position.set( 0.32, 0.39, 0.7 );
+
+        // RENDERER
+        renderer = new THREE.WebGLRenderer( { antialias: true } );
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.setSize( canvasWidth, canvasHeight );
+        container.appendChild( renderer.domElement );
+
+        // EVENTS
+        window.addEventListener( 'resize', onWindowResize );
+
+        // CONTROLS
+        cameraControls = new OrbitControls( camera, renderer.domElement );
+        cameraControls.minDistance = 250;
+			  cameraControls.maxDistance = 1750;
+        cameraControls.addEventListener( 'change', render );
+
+        // TEXTURE MAP
+        const textureMap = new THREE.TextureLoader().load( 'textures/uv_grid_opengl.jpg' );
+        textureMap.wrapS = textureMap.wrapT = THREE.RepeatWrapping;
+        textureMap.anisotropy = 16;
+        textureMap.colorSpace = THREE.SRGBColorSpace;
+
+        // REFLECTION MAP
+        const path = 'textures/cube/pisa/';
+        const urls = [ 'px.png', 'nx.png', 'py.png', 'ny.png', 'pz.png', 'nz.png' ];
+
+        textureCube = new THREE.CubeTextureLoader().setPath( path ).load( urls );
+
+        materials[ 'wireframe' ] = new THREE.MeshBasicMaterial( { wireframe: true } );
+        materials[ 'flat' ] = new THREE.MeshPhongMaterial( { specular: 0x000000, flatShading: true, side: THREE.DoubleSide } );
+        materials[ 'smooth' ] = new THREE.MeshLambertMaterial( { side: THREE.DoubleSide } );
+        materials[ 'glossy' ] = new THREE.MeshPhongMaterial( { side: THREE.DoubleSide } );
+        materials[ 'textured' ] = new THREE.MeshPhongMaterial( { map: textureMap, side: THREE.DoubleSide } );
+        materials[ 'reflective' ] = new THREE.MeshPhongMaterial( { envMap: textureCube, side: THREE.DoubleSide } );
+
+        // scene itself
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color( 0xAAAAAA );
+
+
+        // Sun
+        mesh = new THREE.Mesh(
+					new THREE.SphereGeometry( 100, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0xffffff, wireframe: true } )
+				);
+				scene.add( mesh );
+
+        mesh2 = new THREE.Mesh(
+					new THREE.SphereGeometry( 50, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0x00ff00, wireframe: true } )
+				);
+				mesh.add( mesh2 );
+        
+        
+        const mesh3 = new THREE.Mesh(
+					new THREE.SphereGeometry( 10, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0x0000ff, wireframe: true } )
+				);
+				mesh2.add( mesh3 );
+
+        scene.add( ambientLight );
+        scene.add( light );
+
+        // GUI
+        setupGui();
+
+      }
+
+      // EVENT HANDLERS
+
+      function onWindowResize() {
+
+        const canvasWidth = window.innerWidth;
+        const canvasHeight = window.innerHeight;
+
+        renderer.setSize( canvasWidth, canvasHeight );
+
+        camera.aspect = canvasWidth / canvasHeight;
+        camera.updateProjectionMatrix();
+
+        render();
+
+      }
+
+      function setupGui() {
+
+        effectController = {
+          newTess: 15,
+          bottom: true,
+          lid: true,
+          body: true,
+          fitLid: false,
+          nonblinn: false,
+          newShading: 'glossy'
+        };
+
+        const gui = new GUI();
+        gui.add( effectController, 'newTess', [ 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 40, 50 ] ).name( 'Tessellation Level' ).onChange( render );
+        gui.add( effectController, 'lid' ).name( 'display lid' ).onChange( render );
+        gui.add( effectController, 'body' ).name( 'display body' ).onChange( render );
+        gui.add( effectController, 'bottom' ).name( 'display bottom' ).onChange( render );
+        gui.add( effectController, 'fitLid' ).name( 'snug lid' ).onChange( render );
+        gui.add( effectController, 'nonblinn' ).name( 'original scale' ).onChange( render );
+        gui.add( effectController, 'newShading', [ 'wireframe', 'flat', 'smooth', 'glossy', 'textured', 'reflective' ] ).name( 'Shading' ).onChange( render );
+
+      }
+
+
+      //
+
+      function render() {
+
+        if ( effectController.newTess !== tess ||
+          effectController.bottom !== bBottom ||
+          effectController.lid !== bLid ||
+          effectController.body !== bBody ||
+          effectController.fitLid !== bFitLid ||
+          effectController.nonblinn !== bNonBlinn ||
+          effectController.newShading !== shading ) {
+
+          tess = effectController.newTess;
+          bBottom = effectController.bottom;
+          bLid = effectController.lid;
+          bBody = effectController.body;
+          bFitLid = effectController.fitLid;
+          bNonBlinn = effectController.nonblinn;
+          shading = effectController.newShading;
+
+          createNewTeapot();
+
+        }
+
+        // skybox is rendered separately, so that it is always behind the teapot.
+        if ( shading === 'reflective' ) {
+
+          scene.background = textureCube;
+
+        } else {
+
+          scene.background = null;
+
+        }
+
+        // rotate mesh
+        const r = Date.now() * 0.0005;
+        mesh.rotation.y += 0.01;
+				// mesh.position.z = 700 * Math.sin( r );
+				// mesh.position.y = 700 * Math.sin( r );
+
+        // mesh.children[ 0 ].position.x = 170 * Math.cos( 2 * r );
+        mesh.children[0].rotation.y += 0.03
+				mesh.children[ 0 ].position.x = 650;
+        
+       
+				mesh2.children[ 0 ].position.x = 100;
+
+
+        renderer.render( scene, camera );
+
+      }
+
+      function animate() {
+
+        requestAnimationFrame( animate );
+
+        render();
+        stats.update();
+
+      }
+
+      // Whenever the teapot changes, the scene is rebuilt from scratch (not much to it).
+      function createNewTeapot() {
+
+        if ( teapot !== undefined ) {
+
+          teapot.geometry.dispose();
+          scene.remove( teapot );
+
+        }
+
+        const geometry = new TeapotGeometry( teapotSize,
+          tess,
+          effectController.bottom,
+          effectController.lid,
+          effectController.body,
+          effectController.fitLid,
+          ! effectController.nonblinn );
+
+        teapot = new THREE.Mesh( geometry, materials[ shading ] );
+
+        scene.add( teapot );
+
+      }
+
+    </script>
+  </body>
+
+</html>
