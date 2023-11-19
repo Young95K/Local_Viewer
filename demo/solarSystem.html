@@ -48,7 +48,7 @@
       let shading;
       let cStyle;
 
-      let teapot, textureCube, curve, curveObject;
+      let teapot, textureCube, curve_to_draw, curveObject;
       let   clock = new THREE.Clock();
       let position = new THREE.Vector3();
       let dataArray = [];
@@ -91,7 +91,7 @@
         // CONTROLS
         cameraControls = new OrbitControls( camera, renderer.domElement );
         cameraControls.minDistance = 250;
-			  cameraControls.maxDistance = 1750;
+			  cameraControls.maxDistance = 2500;
         //cameraControls.maxPolarAngle = 0.5 * Math.PI;
         cameraControls.maxPolarAngle = 0.25 * Math.PI;
         cameraControls.addEventListener( 'change', render );
@@ -207,7 +207,7 @@
       function importAndLoadJSON() {
         console.log("importAndLoadJSON");
         // Replace 'your_json_file.json' with the actual path to your JSON file
-        fetch('../../t_and_pos_data_2.json')
+        fetch('../samples/t_and_pos_data_2.json')
           .then(response => response.json())
           .then(data => {
             // Use the parsed JSON data as a JavaScript object
@@ -218,8 +218,8 @@
               var pos = loadedDataArray[i].pos;
               var coord_vec = new THREE.Vector3(pos.x, pos.y, pos.z)
               camera_coordinates.push(coord_vec)
-              console.log("Position " + i + ": ", pos.x, pos.y, pos.z);
             }
+            console.log("camera number " + camera_coordinates.length);
             // You can now work with the 'loadedDataArray' as needed
           })
           .catch(error => {
@@ -382,31 +382,43 @@
 
       }
       function drawCurve(){
+        if ( curveObject !== undefined ) {
+          
+          curveObject.geometry.dispose();
+          scene.remove( curveObject );
+
+        }
 
 
         if (cStyle === 'spline'){
-          console.log(camera_coordinates)
-          curve = new THREE.CatmullRomCurve3([
-            camera_coordinates[0],
-            camera_coordinates[1],
-            camera_coordinates[2]
-          ]);
-        } else if (cStyle === 'QuadBezier'){
-          console.log('QuadBezier')
-          curve = new THREE.QuadraticBezierCurve3(
+          console.log(...camera_coordinates);
+
+          curve_to_draw = new THREE.CatmullRomCurve3(
             camera_coordinates
+            /*[
+              new THREE.Vector3( -1000, 0, 1000 ),
+              new THREE.Vector3( -500, 500, 500 ),
+              new THREE.Vector3( 0, 0, 0 ),
+              new THREE.Vector3( 500, -500, 500 ),
+	            new THREE.Vector3( 1000, 0, 1000 )
+            ]*/
+          );
+        } else if (cStyle === 'QuadBezier'){
+          console.log('QuadBezier');
+          curve_to_draw = new THREE.QuadraticBezierCurve3(
+            ...camera_coordinates
           );
         } else if (cStyle === 'CubBezier'){
-          console.log('CubBezier')
-          curve = new THREE.CubicBezierCurve3(
-            camera_coordinates
+          console.log('CubBezier');
+          curve_to_draw = new THREE.CubicBezierCurve3(
+            ...camera_coordinates
           );
         }
 
-        const points = curve.getPoints( 50 );
+        const points = curve_to_draw.getPoints( 100 );
         const geometry = new THREE.BufferGeometry().setFromPoints( points );
         const material = new THREE.LineBasicMaterial( { color: 0xff0000 } );
-        const curveObject = new THREE.Line( geometry, material );
+        curveObject = new THREE.Line( geometry, material );
 
         scene.add(curveObject);
       }
